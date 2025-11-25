@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <title>Fish Tank + Weekly Dosage Dashboard</title>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
     body{font-family:Arial; background:#f4f7fb; padding:20px;}
     h1{color:#0b5670;}
@@ -89,7 +90,14 @@
     </div>
   </div>
 
-<script>
+<script type="module">
+
+/* ---------------------- FIREBASE IMPORTS ----------------------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+import { getDatabase, ref, set, get, onValue } 
+  from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
+
+/* ---------------------- FIREBASE CONFIG ------------------------ */
 const firebaseConfig = {
     apiKey: "AIzaSyANvMOIRcRdOjOIJ-GglO-iGyeel64ZG_U",
     authDomain: "smart-aquarium-system-3a19d.firebaseapp.com",
@@ -99,10 +107,11 @@ const firebaseConfig = {
     messagingSenderId: "656318848878",
     appId: "1:656318848878:web:96fd9d56a25a222505ab7f"
 };
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
 
-// Elements
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+/* ------------------------- ELEMENTS ---------------------------- */
 const phEl = document.getElementById('ph'),
       amEl = document.getElementById('ammonia'),
       tempEl = document.getElementById('temperature'),
@@ -121,71 +130,87 @@ const doseStatus = document.getElementById('doseStatus'),
 
 const weeklyDoseStatus = document.getElementById('weeklyDoseStatus');
 
-// NEW: dosage level elements
 const doseLevel = document.getElementById('doseLevel');
 const doseLevelStatus = document.getElementById('doseLevelStatus');
 
-// Feeding Functions
-function setBool(path,val){ db.ref(path).set(val); }
-function openMain(){ setBool('/feed/button_open_main',true); feedStatus.innerText="Status: Opening Main..."; }
-function closeMain(){ setBool('/feed/button_close_main',true); feedStatus.innerText="Status: Closing Main..."; }
-function openLower(){ setBool('/feed/button_open_lower',true); feedStatus.innerText="Status: Opening Lower..."; }
-function closeLower(){ setBool('/feed/button_close_lower',true); feedStatus.innerText="Status: Closing Lower..."; }
+/* -------------------- Feeding Button Functions ------------------ */
+function setBool(path,val){ set(ref(db,path), val); }
 
-// Daily Dosage
-function startDosage(){
+window.openMain = function(){
+    setBool('/feed/button_open_main', true);
+    feedStatus.innerText="Status: Opening Main...";
+}
+window.closeMain = function(){
+    setBool('/feed/button_close_main', true);
+    feedStatus.innerText="Status: Closing Main...";
+}
+window.openLower = function(){
+    setBool('/feed/button_open_lower', true);
+    feedStatus.innerText="Status: Opening Lower...";
+}
+window.closeLower = function(){
+    setBool('/feed/button_close_lower', true);
+    feedStatus.innerText="Status: Closing Lower...";
+}
+
+/* ----------------------- Daily Dosage -------------------------- */
+window.startDosage = function(){
     const ml = Number(document.getElementById('doseInput').value);
     if(ml<=0){ alert("Enter valid mL"); return;}
-    db.ref('/dose/ml').set(ml);
-    db.ref('/dose/start').set(true);
+    set(ref(db, '/dose/ml'), ml);
+    set(ref(db, '/dose/start'), true);
     doseStatus.innerText="Status: Dispensing...";
     doseStatus.style.color="#0891b2";
 }
 
-// Weekly Dosage
-function startWeeklyDose(){
+/* ---------------------- Weekly Dosage -------------------------- */
+window.startWeeklyDose = function(){
     const ml = Number(document.getElementById('weeklyDoseInput').value);
     if(ml<=0){ alert("Enter valid mL"); return; }
-    db.ref('/weeklyDose/hasPoured').get().then(snapshot=>{
-        if(snapshot.val()===true){ alert("Medicine already poured!"); }
-        else{
-            db.ref('/weeklyDose/ml').set(ml);
-            db.ref('/weeklyDose/start').set(true);
+
+    get(ref(db, '/weeklyDose/hasPoured')).then(snapshot => {
+        if(snapshot.val() === true){
+            alert("Medicine already poured!");
+        } else {
+            set(ref(db, '/weeklyDose/ml'), ml);
+            set(ref(db, '/weeklyDose/start'), true);
             weeklyDoseStatus.innerText="Status: Dispensing...";
             weeklyDoseStatus.style.color="#0891b2";
         }
     });
 }
 
-// Firebase Listeners
-db.ref('/sensor/ph').on('value',snap=>{
-    phEl.innerText=snap.val().toFixed(2);
-    phStatus.innerText=(snap.val()>=6.5 && snap.val()<=8.5)?"Safe":"Harmful";
+/* ----------------------- Firebase Listeners -------------------- */
+onValue(ref(db, '/sensor/ph'), snap => {
+    const v = snap.val();
+    phEl.innerText = v.toFixed(2);
+    phStatus.innerText = (v>=6.5 && v<=8.5) ? "Safe" : "Harmful";
 });
 
-db.ref('/sensor/ammonia').on('value',snap=>{
-    amEl.innerText=snap.val().toFixed(2);
-    amStatus.innerText=(snap.val()<=25)?"Safe":"Harmful";
+onValue(ref(db, '/sensor/ammonia'), snap => {
+    const v = snap.val();
+    amEl.innerText = v.toFixed(2);
+    amStatus.innerText = (v<=25) ? "Safe" : "Harmful";
 });
 
-db.ref('/sensor/temperature').on('value',snap=>{
-    tempEl.innerText=snap.val().toFixed(2);
+onValue(ref(db, '/sensor/temperature'), snap => {
+    tempEl.innerText = snap.val().toFixed(2);
 });
 
-db.ref('/feed/weight').on('value', snap => { 
+onValue(ref(db, '/feed/weight'), snap => { 
     const w = snap.val();
     wEl.innerText = w ? w.toFixed(1) : "0.0";
 });
 
-db.ref('/feed/status').on('value',snap=>{ feedStatus.innerText="Status: "+snap.val(); });
-db.ref('/feed/foodStatus').on('value',snap=>{ foodStatus.innerText=snap.val(); });
-db.ref('/control/heater').on('value',snap=>{ heaterStatus.innerText="Heater: "+(snap.val()?"ON":"OFF"); });
-db.ref('/control/cooler').on('value',snap=>{ coolerStatus.innerText="Cooler: "+(snap.val()?"ON":"OFF"); });
-db.ref('/dose/status').on('value',snap=>{ doseStatus.innerText="Status: "+snap.val(); });
-db.ref('/weeklyDose/status').on('value',snap=>{ weeklyDoseStatus.innerText="Status: "+snap.val(); });
+onValue(ref(db, '/feed/status'), snap => { feedStatus.innerText="Status: "+snap.val(); });
+onValue(ref(db, '/feed/foodStatus'), snap => { foodStatus.innerText = snap.val(); });
+onValue(ref(db, '/control/heater'), snap => { heaterStatus.innerText = "Heater: "+(snap.val()?"ON":"OFF"); });
+onValue(ref(db, '/control/cooler'), snap => { coolerStatus.innerText = "Cooler: "+(snap.val()?"ON":"OFF"); });
+onValue(ref(db, '/dose/status'), snap => { doseStatus.innerText="Status: "+snap.val(); });
+onValue(ref(db, '/weeklyDose/status'), snap => { weeklyDoseStatus.innerText="Status: "+snap.val(); });
 
-// NEW LISTENER: dosage level
-db.ref('/dose/level').on('value', snap => {
+/* ---------- Dosage Level Monitoring (Tank Status) ------------ */
+onValue(ref(db, '/dose/level'), snap => {
     const lvl = snap.val();
     doseLevel.innerText = lvl !== null ? lvl.toFixed(1) : "--";
 
@@ -203,7 +228,7 @@ db.ref('/dose/level').on('value', snap => {
     }
 });
 
-// --- Chart.js Graph for Tank1 and Tank2 ---
+/* ----------------------- Dosage Chart -------------------------- */
 const ctx = document.getElementById('dosageChart').getContext('2d');
 const dosageChart = new Chart(ctx, {
     type: 'line',
@@ -254,14 +279,16 @@ function addDosageData(tank1, tank2){
     dosageChart.update();
 }
 
-// Firebase listeners for Tank 1 and Tank 2
-db.ref('/dose/tank1').on('value', snap => {
-    const tank1Level = snap.val() || 0;
-    db.ref('/dose/tank2').once('value').then(snap2 => {
-        const tank2Level = snap2.val() || 0;
-        addDosageData(tank1Level, tank2Level);
+/* Listen for Tank 1 & Tank 2 changes */
+onValue(ref(db, '/dose/tank1'), snap => {
+    const tank1 = snap.val() || 0;
+    get(ref(db, '/dose/tank2')).then(snap2 => {
+        const tank2 = snap2.val() || 0;
+        addDosageData(tank1, tank2);
     });
 });
+
 </script>
+
 </body>
 </html>
