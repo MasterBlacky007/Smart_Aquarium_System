@@ -1,0 +1,266 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Fish Tank + Weekly Dosage Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body{font-family:Arial; background:#f4f7fb; padding:20px;}
+    h1{color:#0b5670;}
+    .card{background:#fff; padding:16px; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.06); width:320px; margin:12px;}
+    .row{display:flex; gap:12px; flex-wrap:wrap;}
+    .value{font-size:28px; font-weight:700;}
+    .status{margin-top:8px;font-weight:600;}
+    .btn{padding:10px 14px; border-radius:8px; border:none; cursor:pointer;}
+    .btn-open{background:#16a34a;color:#fff;}
+    .btn-close{background:#dc2626;color:#fff;}
+    #controls{display:flex;gap:10px;flex-direction:column;}
+    .btn-dose{background:#0891b2;color:#fff;margin-top:10px;}
+    canvas{width:100%!important; max-width:100%!important;}
+  </style>
+</head>
+<body>
+  <h1>Fish Tank Dashboard</h1>
+
+  <!-- Sensor Cards -->
+  <div class="row">
+    <div class="card"><h3>pH</h3><div id="ph" class="value">--</div><div id="phStatus" class="status">--</div></div>
+    <div class="card"><h3>Ammonia</h3><div id="ammonia" class="value">--</div><div id="amStatus" class="status">--</div></div>
+    <div class="card"><h3>Temperature (°C)</h3><div id="temperature" class="value">--</div><div id="tempStatus" class="status">--</div></div>
+    <div class="card"><h3>Water Level (cm)</h3><div id="waterLevel" class="value">--</div><div id="waterAlert" class="status">--</div></div>
+  </div>
+
+  <!-- Feeding Cards -->
+  <div class="row">
+    <div class="card"><h3>Tray Weight (g)</h3><div id="weight" class="value">--</div><div id="feedStatus" class="status">Status: Idle</div></div>
+    <div class="card"><h3>Food Status</h3><div id="foodStatus" class="value">--</div></div>
+
+    <!-- Dosage Levels for Tank 1 & Tank 2 -->
+    <div class="card">
+      <h3>Dosage Levels (mL)</h3>
+      <div id="doseLevelTank1" class="value">Tank 1: --</div>
+      <div id="doseLevelTank2" class="value">Tank 2: --</div>
+      <div id="doseLevelTotal" class="value">Total: --</div>
+      <div id="doseLevelStatus" class="status">--</div>
+    </div>
+
+    <div class="card" id="controls">
+      <h3>Feeding Controls</h3>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button class="btn btn-open" onclick="openMain()">Open Main</button>
+        <button class="btn btn-close" onclick="closeMain()">Close Main</button>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-open" onclick="openLower()">Open Lower</button>
+        <button class="btn btn-close" onclick="closeLower()">Close Lower</button>
+      </div>
+      <p style="margin-top:10px;font-size:13px;color:#444;">Tip: After pressing "Open Main", watch the weight. Close when ready.</p>
+    </div>
+
+    <div class="card"><h3>Temp Control Status</h3><div id="heaterStatus" class="status">Heater: --</div><div id="coolerStatus" class="status">Cooler: --</div></div>
+  </div>
+
+  <!-- Daily Dosage -->
+  <div class="row">
+    <div class="card">
+      <h3>Daily Dosage</h3>
+      <input id="doseInput" type="number" placeholder="Enter mL" style="width:80px;padding:6px;margin-bottom:8px;">
+      <button class="btn btn-dose" onclick="startDosage()">Start Daily Dose</button>
+      <div id="doseStatus" class="status" style="margin-top:12px;">Status: Idle</div>
+    </div>
+  </div>
+
+  <!-- Weekly Dosage -->
+  <h1>Weekly Dosage Dashboard</h1>
+  <div class="row">
+    <div class="card">
+      <h3>Weekly Medicine</h3>
+      <input id="weeklyDoseInput" type="number" placeholder="Enter mL" style="width:80px;padding:6px;margin-bottom:8px;">
+      <button class="btn btn-dose" onclick="startWeeklyDose()">Start Weekly Dose</button>
+      <div id="weeklyDoseStatus" class="status" style="margin-top:12px;">Status: --</div>
+    </div>
+  </div>
+
+  <!-- Graphs -->
+  <div class="row">
+    <div class="card" style="width:100%;">
+      <h3>Dosage Levels Over Time</h3>
+      <canvas id="dosageChart" height="200"></canvas>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card" style="width:100%;">
+      <h3>Water Level Over Time</h3>
+      <canvas id="waterChart" height="200"></canvas>
+    </div>
+  </div>
+
+<script>
+const firebaseConfig = {
+    apiKey: "AIzaSyASBX1WRqOyJea1fm4LXGIV1PHT_7GuCVo",
+    authDomain: "exercise2-55d7c.firebaseapp.com",
+    databaseURL: "https://exercise2-55d7c-default-rtdb.asia-southeast1.firebasedatabase.app/",
+    projectId: "exercise2-55d7c",
+    storageBucket: "exercise2-55d7c.appspot.com",
+    messagingSenderId: "278969110850",
+    appId: "1:278969110850:web:xxxx"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// Elements
+const phEl = document.getElementById('ph'),
+      amEl = document.getElementById('ammonia'),
+      tempEl = document.getElementById('temperature'),
+      wEl = document.getElementById('weight'),
+      waterLevelEl = document.getElementById('waterLevel'),
+      waterAlertEl = document.getElementById('waterAlert');
+
+const phStatus = document.getElementById('phStatus'),
+      amStatus = document.getElementById('amStatus'),
+      tempStatus = document.getElementById('tempStatus');
+
+const feedStatus = document.getElementById('feedStatus'),
+      heaterStatus = document.getElementById('heaterStatus'),
+      coolerStatus = document.getElementById('coolerStatus');
+
+const doseStatus = document.getElementById('doseStatus'),
+      foodStatus = document.getElementById('foodStatus');
+
+const weeklyDoseStatus = document.getElementById('weeklyDoseStatus');
+
+const doseLevelTank1 = document.getElementById('doseLevelTank1'),
+      doseLevelTank2 = document.getElementById('doseLevelTank2'),
+      doseLevelTotal = document.getElementById('doseLevelTotal'),
+      doseLevelStatus = document.getElementById('doseLevelStatus');
+
+let latestTank1 = 0, latestTank2 = 0;
+
+// Feeding Functions
+function setBool(path,val){ db.ref(path).set(val); }
+function openMain(){ setBool('/feed/button_open_main',true); feedStatus.innerText="Status: Opening Main..."; }
+function closeMain(){ setBool('/feed/button_close_main',true); feedStatus.innerText="Status: Closing Main..."; }
+function openLower(){ setBool('/feed/button_open_lower',true); feedStatus.innerText="Status: Opening Lower..."; }
+function closeLower(){ setBool('/feed/button_close_lower',true); feedStatus.innerText="Status: Closing Lower..."; }
+
+// Daily Dosage
+function startDosage(){
+    const ml = Number(document.getElementById('doseInput').value);
+    if(ml<=0){ alert("Enter valid mL"); return;}
+    db.ref('/dose/ml').set(ml);
+    db.ref('/dose/start').set(true);
+    doseStatus.innerText="Status: Dispensing...";
+    doseStatus.style.color="#0891b2";
+}
+
+// Weekly Dosage
+function startWeeklyDose(){
+    const ml = Number(document.getElementById('weeklyDoseInput').value);
+    if(ml<=0){ alert("Enter valid mL"); return; }
+    db.ref('/weeklyDose/hasPoured').get().then(snapshot=>{
+        if(snapshot.val()===true){ alert("Medicine already poured!"); }
+        else{
+            db.ref('/weeklyDose/ml').set(ml);
+            db.ref('/weeklyDose/start').set(true);
+            weeklyDoseStatus.innerText="Status: Dispensing...";
+            weeklyDoseStatus.style.color="#0891b2";
+        }
+    });
+}
+
+// Firebase Listeners
+db.ref('/sensor/ph').on('value',snap=>{
+    phEl.innerText=snap.val().toFixed(2);
+    phStatus.innerText=(snap.val()>=6.5 && snap.val()<=8.5)?"Safe":"Harmful";
+});
+db.ref('/sensor/ammonia').on('value',snap=>{
+    amEl.innerText=snap.val().toFixed(2);
+    amStatus.innerText=(snap.val()<=25)?"Safe":"Harmful";
+});
+db.ref('/sensor/temperature').on('value',snap=>{ tempEl.innerText=snap.val().toFixed(2); });
+db.ref('/feed/weight').on('value', snap => { 
+    const w = snap.val();
+    wEl.innerText = w ? w.toFixed(1) : "0.0";
+});
+db.ref('/feed/status').on('value',snap=>{ feedStatus.innerText="Status: "+snap.val(); });
+db.ref('/feed/foodStatus').on('value',snap=>{ foodStatus.innerText=snap.val(); });
+db.ref('/control/heater').on('value',snap=>{ heaterStatus.innerText="Heater: "+(snap.val()?"ON":"OFF"); });
+db.ref('/control/cooler').on('value',snap=>{ coolerStatus.innerText="Cooler: "+(snap.val()?"ON":"OFF"); });
+db.ref('/dose/status').on('value',snap=>{ doseStatus.innerText="Status: "+snap.val(); });
+db.ref('/weeklyDose/status').on('value',snap=>{ weeklyDoseStatus.innerText="Status: "+snap.val(); });
+
+// Dosage Levels Listener (Tanks 1 & 2)
+function updateDosageLevels(t1,t2){
+    if(t1!==null) latestTank1=t1;
+    if(t2!==null) latestTank2=t2;
+
+    doseLevelTank1.innerText = "Tank 1: "+latestTank1.toFixed(1);
+    doseLevelTank2.innerText = "Tank 2: "+latestTank2.toFixed(1);
+    doseLevelTotal.innerText = "Total: "+(latestTank1+latestTank2).toFixed(1);
+
+    if(latestTank1+latestTank2 >= 50){ doseLevelStatus.innerText="Level: Full"; doseLevelStatus.style.color="green"; }
+    else if(latestTank1+latestTank2 >= 20){ doseLevelStatus.innerText="Level: Medium"; doseLevelStatus.style.color="#d97706"; }
+    else{ doseLevelStatus.innerText="Level: Low"; doseLevelStatus.style.color="red"; }
+
+    addDosageData(latestTank1,latestTank2);
+}
+db.ref('/dose/tank1').on('value',snap=>{ updateDosageLevels(snap.val(),null); });
+db.ref('/dose/tank2').on('value',snap=>{ updateDosageLevels(null,snap.val()); });
+
+// Chart.js Graph for Dosage
+const ctx = document.getElementById('dosageChart').getContext('2d');
+const dosageChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [
+        { label: 'Tank 1', data: [], borderColor: 'rgba(16,163,74,1)', backgroundColor: 'rgba(16,163,74,0.2)', fill:true, tension:0.3 },
+        { label: 'Tank 2', data: [], borderColor: 'rgba(8,145,178,1)', backgroundColor: 'rgba(8,145,178,0.2)', fill:true, tension:0.3 }
+    ]},
+    options: { responsive:true, scales:{ x:{ title:{ display:true, text:'Time'} }, y:{ title:{ display:true, text:'Dosage Level (mL)'}, beginAtZero:true } } }
+});
+function addDosageData(tank1,tank2){
+    const time=new Date().toLocaleTimeString(), maxPoints=20;
+    dosageChart.data.labels.push(time);
+    dosageChart.data.datasets[0].data.push(tank1);
+    dosageChart.data.datasets[1].data.push(tank2);
+    if(dosageChart.data.labels.length>maxPoints){
+        dosageChart.data.labels.shift();
+        dosageChart.data.datasets[0].data.shift();
+        dosageChart.data.datasets[1].data.shift();
+    }
+    dosageChart.update();
+}
+
+// Water Level Chart
+const waterCtx = document.getElementById('waterChart').getContext('2d');
+const waterChart = new Chart(waterCtx, {
+    type:'line',
+    data:{ labels:[], datasets:[{ label:'Water Level (cm)', data:[], borderColor:'blue', backgroundColor:'rgba(0,0,255,0.2)', fill:true, tension:0.3 }]},
+    options:{ responsive:true, scales:{ x:{ title:{ display:true, text:'Time'} }, y:{ title:{ display:true, text:'Water Level (cm)'}, beginAtZero:true } } }
+});
+function addWaterData(lvl){
+    const time=new Date().toLocaleTimeString(), maxPoints=20;
+    waterChart.data.labels.push(time);
+    waterChart.data.datasets[0].data.push(lvl);
+    if(waterChart.data.labels.length>maxPoints){
+        waterChart.data.labels.shift();
+        waterChart.data.datasets[0].data.shift();
+    }
+    waterChart.update();
+}
+
+// Firebase Water Level Listener
+db.ref('/sensor/waterLevel').on('value', snap=>{
+    const lvl = snap.val();
+    waterLevelEl.innerText = lvl !== null ? lvl.toFixed(1) : "--";
+    addWaterData(lvl);
+
+    if(lvl <= 5){ waterAlertEl.innerText="Warning: Fill Water!"; waterAlertEl.style.color="orange"; }
+    else if(lvl > 10){ waterAlertEl.innerText="Harmful Level!"; waterAlertEl.style.color="red"; }
+    else{ waterAlertEl.innerText="Normal"; waterAlertEl.style.color="green"; }
+});
+</script>
+</body>
+</html>

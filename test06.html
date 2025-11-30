@@ -1,0 +1,611 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Aquarium Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --primary: #0b5670;
+      --secondary: #16a34a;
+      --danger: #dc2626;
+      --warning: #d97706;
+      --info: #0891b2;
+    }
+    
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f9ff;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    h1 {
+      color: var(--primary);
+      margin-bottom: 10px;
+    }
+    
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    
+    .card {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      border-top: 4px solid var(--primary);
+    }
+    
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: bold;
+      margin-bottom: 15px;
+      color: var(--primary);
+    }
+    
+    .value {
+      font-size: 2rem;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    
+    .status {
+      padding: 5px 10px;
+      border-radius: 15px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      display: inline-block;
+    }
+    
+    .status-safe { background: #dcfce7; color: #16a34a; }
+    .status-warning { background: #fef3c7; color: #d97706; }
+    .status-danger { background: #fee2e2; color: #dc2626; }
+    .status-info { background: #e0f2fe; color: #0891b2; }
+    
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    
+    .btn {
+      padding: 10px 15px;
+      border-radius: 8px;
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+      margin: 5px;
+    }
+    
+    .btn-open { background: var(--secondary); color: white; }
+    .btn-close { background: var(--danger); color: white; }
+    .btn-dose { background: var(--info); color: white; width: 100%; margin-top: 10px; }
+    
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    
+    input {
+      padding: 8px;
+      border-radius: 5px;
+      border: 1px solid #ddd;
+      width: 80px;
+    }
+    
+    .chart-container {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    .chart-title {
+      font-size: 1.2rem;
+      font-weight: bold;
+      margin-bottom: 15px;
+      color: var(--primary);
+    }
+    
+    canvas {
+      width: 100% !important;
+    }
+    
+    .alert-banner {
+      padding: 10px 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-weight: bold;
+    }
+    
+    .alert-warning { background: #fef3c7; border-left: 4px solid var(--warning); }
+    .alert-danger { background: #fee2e2; border-left: 4px solid var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Aquarium Dashboard</h1>
+      <p>Monitor and control your aquarium environment</p>
+    </header>
+
+    <div id="alertContainer"></div>
+
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-title">pH Level</div>
+        <div id="ph" class="value">--</div>
+        <div id="phStatus" class="status">--</div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">Ammonia</div>
+        <div id="ammonia" class="value">--</div>
+        <div id="amStatus" class="status">--</div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">Temperature</div>
+        <div id="temperature" class="value">--</div>
+        <div id="tempStatus" class="status">--</div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">Water Level</div>
+        <div id="waterLevel" class="value">--</div>
+        <div id="waterAlert" class="status">--</div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">Tray Weight</div>
+        <div id="weight" class="value">--</div>
+        <div id="feedStatus" class="status">Idle</div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">Food Status</div>
+        <div id="foodStatus" class="value">--</div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">Dosage Level</div>
+        <div id="doseLevel" class="value">--</div>
+        <div id="doseLevelStatus" class="status">--</div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">Temperature Control</div>
+        <div id="heaterStatus" class="status">Heater: --</div>
+        <div id="coolerStatus" class="status">Cooler: --</div>
+      </div>
+    </div>
+
+    <h2 style="margin: 30px 0 20px; color: var(--primary);">Controls</h2>
+    
+    <div class="controls-grid">
+      <div class="card">
+        <div class="card-title">Feeding Controls</div>
+        <div class="btn-group">
+          <button class="btn btn-open" onclick="openMain()">Open Main</button>
+          <button class="btn btn-close" onclick="closeMain()">Close Main</button>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-open" onclick="openLower()">Open Lower</button>
+          <button class="btn btn-close" onclick="closeLower()">Close Lower</button>
+        </div>
+        <p style="font-size: 0.9rem; color: #666; margin-top: 10px;">After opening, watch the weight and close when ready.</p>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">Daily Dosage</div>
+        <input id="doseInput" type="number" placeholder="Enter mL">
+        <button class="btn btn-dose" onclick="startDosage()">Start Daily Dose</button>
+        <div id="doseStatus" class="status" style="margin-top: 10px;">Idle</div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">Weekly Medicine</div>
+        <input id="weeklyDoseInput" type="number" placeholder="Enter mL">
+        <button class="btn btn-dose" onclick="startWeeklyDose()">Start Weekly Dose</button>
+        <div id="weeklyDoseStatus" class="status" style="margin-top: 10px;">--</div>
+      </div>
+    </div>
+
+    <div class="chart-container">
+      <div class="chart-title">Dosage Levels Over Time</div>
+      <canvas id="dosageChart" height="200"></canvas>
+    </div>
+    
+    <div class="chart-container">
+      <div class="chart-title">Water Level Over Time</div>
+      <canvas id="waterChart" height="200"></canvas>
+    </div>
+  </div>
+
+<script>
+// Firebase config
+const firebaseConfig = {
+    apiKey: "AIzaSyASBX1WRqOyJea1fm4LXGIV1PHT_7GuCVo",
+    authDomain: "exercise2-55d7c.firebaseapp.com",
+    databaseURL: "https://exercise2-55d7c-default-rtdb.asia-southeast1.firebasedatabase.app/",
+    projectId: "exercise2-55d7c",
+    storageBucket: "exercise2-55d7c.appspot.com",
+    messagingSenderId: "278969110850",
+    appId: "1:278969110850:web:xxxx"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// Chart variables
+let dosageChart, waterChart;
+
+// Initialize charts
+function initCharts() {
+  // Dosage chart
+  const dosageCtx = document.getElementById('dosageChart').getContext('2d');
+  dosageChart = new Chart(dosageCtx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: 'Tank 1',
+          data: [],
+          borderColor: '#16a34a',
+          backgroundColor: 'rgba(22, 163, 74, 0.1)',
+          tension: 0.3,
+          fill: true
+        },
+        {
+          label: 'Tank 2',
+          data: [],
+          borderColor: '#0891b2',
+          backgroundColor: 'rgba(8, 145, 178, 0.1)',
+          tension: 0.3,
+          fill: true
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Dosage Level (mL)'
+          }
+        },
+        x: {
+          title: {
+            display: true,
+            text: 'Time'
+          }
+        }
+      }
+    }
+  });
+
+  // Water level chart
+  const waterCtx = document.getElementById('waterChart').getContext('2d');
+  waterChart = new Chart(waterCtx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'Water Level',
+        data: [],
+        borderColor: '#0b5670',
+        backgroundColor: 'rgba(11, 86, 112, 0.1)',
+        tension: 0.3,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Water Level (cm)'
+          }
+        },
+        x: {
+          title: {
+            display: true,
+            text: 'Time'
+          }
+        }
+      }
+    }
+  });
+}
+
+// Add data to charts
+function addDosageData(tank1, tank2) {
+  const time = new Date().toLocaleTimeString();
+  
+  dosageChart.data.labels.push(time);
+  dosageChart.data.datasets[0].data.push(tank1);
+  dosageChart.data.datasets[1].data.push(tank2);
+  
+  // Keep only last 15 data points
+  if (dosageChart.data.labels.length > 15) {
+    dosageChart.data.labels.shift();
+    dosageChart.data.datasets[0].data.shift();
+    dosageChart.data.datasets[1].data.shift();
+  }
+  
+  dosageChart.update();
+}
+
+function addWaterData(level) {
+  const time = new Date().toLocaleTimeString();
+  
+  waterChart.data.labels.push(time);
+  waterChart.data.datasets[0].data.push(level);
+  
+  // Keep only last 15 data points
+  if (waterChart.data.labels.length > 15) {
+    waterChart.data.labels.shift();
+    waterChart.data.datasets[0].data.shift();
+  }
+  
+  waterChart.update();
+}
+
+// Alert system
+let activeAlerts = [];
+
+function updateAlerts() {
+  const container = document.getElementById('alertContainer');
+  container.innerHTML = '';
+  
+  activeAlerts.forEach(alert => {
+    const alertEl = document.createElement('div');
+    alertEl.className = `alert-banner ${alert.type}`;
+    alertEl.textContent = alert.message;
+    container.appendChild(alertEl);
+  });
+}
+
+function addAlert(type, message) {
+  activeAlerts = activeAlerts.filter(a => a.message !== message);
+  activeAlerts.push({ type, message });
+  updateAlerts();
+}
+
+function removeAlert(message) {
+  activeAlerts = activeAlerts.filter(a => a.message !== message);
+  updateAlerts();
+}
+
+// Control functions
+function setBool(path, val) { db.ref(path).set(val); }
+
+function openMain() { 
+  setBool('/feed/button_open_main', true); 
+  document.getElementById('feedStatus').textContent = 'Opening Main...';
+}
+
+function closeMain() { 
+  setBool('/feed/button_close_main', true); 
+  document.getElementById('feedStatus').textContent = 'Closing Main...';
+}
+
+function openLower() { 
+  setBool('/feed/button_open_lower', true); 
+  document.getElementById('feedStatus').textContent = 'Opening Lower...';
+}
+
+function closeLower() { 
+  setBool('/feed/button_close_lower', true); 
+  document.getElementById('feedStatus').textContent = 'Closing Lower...';
+}
+
+function startDosage() {
+  const ml = Number(document.getElementById('doseInput').value);
+  if (ml <= 0) { alert("Enter valid mL"); return; }
+  
+  db.ref('/dose/ml').set(ml);
+  db.ref('/dose/start').set(true);
+  document.getElementById('doseStatus').textContent = 'Dispensing...';
+  document.getElementById('doseStatus').className = 'status status-info';
+}
+
+function startWeeklyDose() {
+  const ml = Number(document.getElementById('weeklyDoseInput').value);
+  if (ml <= 0) { alert("Enter valid mL"); return; }
+  
+  db.ref('/weeklyDose/hasPoured').get().then(snap => {
+    if (snap.val() === true) {
+      alert("Medicine already poured!");
+    } else {
+      db.ref('/weeklyDose/ml').set(ml);
+      db.ref('/weeklyDose/start').set(true);
+      document.getElementById('weeklyDoseStatus').textContent = 'Dispensing...';
+      document.getElementById('weeklyDoseStatus').className = 'status status-info';
+    }
+  });
+}
+
+// Firebase listeners
+function setupListeners() {
+  // pH
+  db.ref('/sensor/ph').on('value', snap => {
+    const val = snap.val();
+    document.getElementById('ph').textContent = val.toFixed(2);
+    
+    if (val >= 6.5 && val <= 8.5) {
+      document.getElementById('phStatus').textContent = 'Safe';
+      document.getElementById('phStatus').className = 'status status-safe';
+      removeAlert('pH level is dangerous');
+    } else {
+      document.getElementById('phStatus').textContent = 'Dangerous';
+      document.getElementById('phStatus').className = 'status status-danger';
+      addAlert('alert-danger', 'pH level is dangerous');
+    }
+  });
+
+  // Ammonia
+  db.ref('/sensor/ammonia').on('value', snap => {
+    const val = snap.val();
+    document.getElementById('ammonia').textContent = val.toFixed(2);
+    
+    if (val <= 25) {
+      document.getElementById('amStatus').textContent = 'Safe';
+      document.getElementById('amStatus').className = 'status status-safe';
+      removeAlert('Ammonia level is high');
+    } else {
+      document.getElementById('amStatus').textContent = 'High';
+      document.getElementById('amStatus').className = 'status status-danger';
+      addAlert('alert-danger', 'Ammonia level is high');
+    }
+  });
+
+  // Temperature
+  db.ref('/sensor/temperature').on('value', snap => {
+    const val = snap.val();
+    document.getElementById('temperature').textContent = val.toFixed(2);
+    
+    if (val >= 22 && val <= 28) {
+      document.getElementById('tempStatus').textContent = 'Optimal';
+      document.getElementById('tempStatus').className = 'status status-safe';
+      removeAlert('Temperature warning');
+    } else if (val >= 20 && val <= 30) {
+      document.getElementById('tempStatus').textContent = 'Acceptable';
+      document.getElementById('tempStatus').className = 'status status-warning';
+      addAlert('alert-warning', 'Temperature is outside optimal range');
+    } else {
+      document.getElementById('tempStatus').textContent = 'Dangerous';
+      document.getElementById('tempStatus').className = 'status status-danger';
+      addAlert('alert-danger', 'Temperature is dangerous');
+    }
+  });
+
+  // Water level
+  db.ref('/sensor/waterLevel').on('value', snap => {
+    const val = snap.val();
+    document.getElementById('waterLevel').textContent = val.toFixed(1);
+    addWaterData(val);
+    
+    if (val <= 5) {
+      document.getElementById('waterAlert').textContent = 'Low';
+      document.getElementById('waterAlert').className = 'status status-warning';
+      addAlert('alert-warning', 'Water level is low');
+    } else if (val > 10) {
+      document.getElementById('waterAlert').textContent = 'High';
+      document.getElementById('waterAlert').className = 'status status-danger';
+      addAlert('alert-danger', 'Water level is too high');
+    } else {
+      document.getElementById('waterAlert').textContent = 'Normal';
+      document.getElementById('waterAlert').className = 'status status-safe';
+      removeAlert('Water level is low');
+      removeAlert('Water level is too high');
+    }
+  });
+
+  // Weight
+  db.ref('/feed/weight').on('value', snap => {
+    const val = snap.val();
+    document.getElementById('weight').textContent = val ? val.toFixed(1) : '0.0';
+  });
+
+  // Feed status
+  db.ref('/feed/status').on('value', snap => {
+    document.getElementById('feedStatus').textContent = snap.val();
+  });
+
+  // Food status
+  db.ref('/feed/foodStatus').on('value', snap => {
+    document.getElementById('foodStatus').textContent = snap.val();
+    if (snap.val() === 'Low') {
+      addAlert('alert-warning', 'Food supply is low');
+    } else {
+      removeAlert('Food supply is low');
+    }
+  });
+
+  // Heater
+  db.ref('/control/heater').on('value', snap => {
+    document.getElementById('heaterStatus').textContent = 'Heater: ' + (snap.val() ? 'ON' : 'OFF');
+  });
+
+  // Cooler
+  db.ref('/control/cooler').on('value', snap => {
+    document.getElementById('coolerStatus').textContent = 'Cooler: ' + (snap.val() ? 'ON' : 'OFF');
+  });
+
+  // Dose status
+  db.ref('/dose/status').on('value', snap => {
+    const status = document.getElementById('doseStatus');
+    status.textContent = snap.val();
+    status.className = 'status ' + (snap.val() === 'Dispensing...' ? 'status-info' : 'status-safe');
+  });
+
+  // Weekly dose status
+  db.ref('/weeklyDose/status').on('value', snap => {
+    const status = document.getElementById('weeklyDoseStatus');
+    status.textContent = snap.val();
+    status.className = 'status ' + (snap.val() === 'Dispensing...' ? 'status-info' : 'status-safe');
+  });
+
+  // Dose level
+  db.ref('/dose/level').on('value', snap => {
+    const val = snap.val();
+    document.getElementById('doseLevel').textContent = val ? val.toFixed(1) : '--';
+    
+    if (val >= 50) {
+      document.getElementById('doseLevelStatus').textContent = 'Full';
+      document.getElementById('doseLevelStatus').className = 'status status-safe';
+      removeAlert('Dosage level is low');
+    } else if (val >= 20) {
+      document.getElementById('doseLevelStatus').textContent = 'Medium';
+      document.getElementById('doseLevelStatus').className = 'status status-warning';
+      removeAlert('Dosage level is low');
+    } else {
+      document.getElementById('doseLevelStatus').textContent = 'Low';
+      document.getElementById('doseLevelStatus').className = 'status status-danger';
+      addAlert('alert-warning', 'Dosage level is low');
+    }
+  });
+
+  // Dosage chart data
+  db.ref('/dose/tank1').on('value', snap => {
+    const tank1 = snap.val() || 0;
+    db.ref('/dose/tank2').once('value').then(snap2 => {
+      const tank2 = snap2.val() || 0;
+      addDosageData(tank1, tank2);
+    });
+  });
+}
+
+// Initialize everything when page loads
+window.addEventListener('DOMContentLoaded', () => {
+  initCharts();
+  setupListeners();
+});
+</script>
+</body>
+</html>

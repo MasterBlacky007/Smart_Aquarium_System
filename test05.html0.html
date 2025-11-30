@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fish Tank Dashboard + Auto Feeding</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body { font-family: Arial, sans-serif; background: #f4f7fb; padding: 20px; }
+h1 { color: #0b5670; }
+.card { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); width: 320px; margin: 12px; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.value { font-size: 28px; font-weight: 700; }
+.status { margin-top: 8px; font-weight: 600; }
+.btn { padding: 10px 14px; border-radius: 8px; border: none; cursor: pointer; margin-top: 4px; }
+.btn-open { background: #16a34a; color: #fff; }
+.btn-close { background: #dc2626; color: #fff; }
+.btn-save { background: #0891b2; color: #fff; }
+canvas { width: 100% !important; max-width: 100% !important; }
+</style>
+</head>
+<body>
+
+<h1>Fish Tank Dashboard + Auto Feeding</h1>
+
+<!-- Sensor Cards -->
+<div class="row">
+  <div class="card"><h3>pH</h3><div id="ph" class="value">--</div><div id="phStatus" class="status">--</div></div>
+  <div class="card"><h3>Ammonia</h3><div id="ammonia" class="value">--</div><div id="amStatus" class="status">--</div></div>
+  <div class="card"><h3>Temperature (°C)</h3><div id="temperature" class="value">--</div></div>
+  <div class="card"><h3>Water Level (cm)</h3><div id="waterLevel" class="value">--</div><div id="waterAlert" class="status">--</div></div>
+</div>
+
+<!-- Feeding & Dosage Cards -->
+<div class="row">
+  <div class="card"><h3>Tray Weight (g)</h3><div id="weight" class="value">--</div><div id="feedStatus" class="status">Status: Idle</div></div>
+  <div class="card"><h3>Food Status</h3><div id="foodStatus" class="value">--</div></div>
+  <div class="card">
+    <h3>Dosage Levels</h3>
+    <div id="doseLevelTank1" class="value">Tank 1: --</div>
+    <div id="doseLevelTank2" class="value">Tank 2: --</div>
+    <div id="doseLevelStatus" class="status">Level: --</div>
+  </div>
+  <div class="card">
+    <h3>Feeding Controls</h3>
+    <button class="btn btn-open" onclick="openMain()">Open Main</button>
+    <button class="btn btn-close" onclick="closeMain()">Close Main</button><br>
+    <button class="btn btn-open" onclick="openLower()">Open Lower</button>
+    <button class="btn btn-close" onclick="closeLower()">Close Lower</button>
+  </div>
+</div>
+
+<!-- Daily & Weekly Dosage -->
+<div class="row">
+  <div class="card">
+    <h3>Daily Dosage</h3>
+    <input id="doseInput" type="number" placeholder="mL" style="width:60px;padding:4px;">
+    <button class="btn btn-save" onclick="startDosage()">Start</button>
+    <div id="doseStatus" class="status">Status: Idle</div>
+  </div>
+  <div class="card">
+    <h3>Weekly Dosage</h3>
+    <input id="weeklyDoseInput" type="number" placeholder="mL" style="width:60px;padding:4px;">
+    <button class="btn btn-save" onclick="startWeeklyDose()">Start</button>
+    <div id="weeklyDoseStatus" class="status">Status: --</div>
+  </div>
+</div>
+
+<!-- Auto Feeding -->
+<div class="row">
+  <div class="card">
+    <h3>Auto Feeding Times</h3>
+    <label>Time 1:</label>
+    <input type="time" id="autoTime1"><button class="btn btn-save" onclick="saveTime(1)">Save</button><br><br>
+    <label>Time 2:</label>
+    <input type="time" id="autoTime2"><button class="btn btn-save" onclick="saveTime(2)">Save</button>
+    <div id="autoFeedStatus" class="status">Status: Idle</div>
+  </div>
+</div>
+
+<!-- Dosage Chart -->
+<div class="row">
+  <div class="card" style="width:100%;">
+    <h3>Dosage Levels Over Time</h3>
+    <canvas id="dosageChart" height="200"></canvas>
+  </div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+  projectId: "YOUR_PROJECT",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// Elements
+const phEl = document.getElementById('ph'), amEl = document.getElementById('ammonia'),
+      tempEl = document.getElementById('temperature'), wEl = document.getElementById('weight'),
+      waterLevelEl = document.getElementById('waterLevel'),
+      phStatus = document.getElementById('phStatus'), amStatus = document.getElementById('amStatus'),
+      feedStatus = document.getElementById('feedStatus'), foodStatus = document.getElementById('foodStatus'),
+      doseLevelTank1 = document.getElementById('doseLevelTank1'), doseLevelTank2 = document.getElementById('doseLevelTank2'),
+      doseLevelStatus = document.getElementById('doseLevelStatus'),
+      doseStatus = document.getElementById('doseStatus'),
+      weeklyDoseStatus = document.getElementById('weeklyDoseStatus'),
+      autoFeedStatus = document.getElementById('autoFeedStatus');
+
+let latestTank1 = 0, latestTank2 = 0;
+
+// Feeding Functions
+function setBool(path,val){ db.ref(path).set(val); }
+function openMain(){ setBool('/feed/button_open_main',true); feedStatus.innerText="Status: Opening Main..."; }
+function closeMain(){ setBool('/feed/button_close_main',true); feedStatus.innerText="Status: Closing Main..."; }
+function openLower(){ setBool('/feed/button_open_lower',true); feedStatus.innerText="Status: Opening Lower..."; }
+function closeLower(){ setBool('/feed/button_close_lower',true); feedStatus.innerText="Status: Closing Lower..."; }
+
+// Dosage
+function startDosage(){
+  const ml = Number(document.getElementById('doseInput').value);
+  if(ml<=0){ alert("Enter valid mL"); return;}
+  db.ref('/dose/ml').set(ml);
+  db.ref('/dose/start').set(true);
+  doseStatus.innerText="Status: Dispensing...";
+}
+function startWeeklyDose(){
+  const ml = Number(document.getElementById('weeklyDoseInput').value);
+  if(ml<=0){ alert("Enter valid mL"); return;}
+  db.ref('/weeklyDose/hasPoured').get().then(snap=>{
+    if(snap.val()===true){ alert("Medicine already poured!"); }
+    else{ db.ref('/weeklyDose/ml').set(ml); db.ref('/weeklyDose/start').set(true); weeklyDoseStatus.innerText="Status: Dispensing..."; }
+  });
+}
+
+// Auto feeding times
+function saveTime(slot){
+  const timeVal = document.getElementById('autoTime'+slot).value;
+  if(!timeVal){ alert("Select valid time"); return;}
+  db.ref('/autoFeed/time'+slot).set(timeVal);
+  autoFeedStatus.innerText = `Auto Feed Times Saved`;
+}
+
+// Listen sensors
+db.ref('/sensor/ph').on('value',snap=>{ phEl.innerText=snap.val().toFixed(2); phStatus.innerText=(snap.val()>=6.5 && snap.val()<=8.5)?"Safe":"Harmful"; });
+db.ref('/sensor/ammonia').on('value',snap=>{ amEl.innerText=snap.val().toFixed(2); amStatus.innerText=(snap.val()<=25)?"Safe":"Harmful"; });
+db.ref('/sensor/temperature').on('value',snap=>{ tempEl.innerText=snap.val().toFixed(2); });
+db.ref('/feed/weight').on('value', snap => { wEl.innerText = snap.val() ? snap.val().toFixed(1) : "0.0"; });
+db.ref('/feed/status').on('value',snap=>{ feedStatus.innerText="Status: "+snap.val(); });
+db.ref('/feed/foodStatus').on('value',snap=>{ foodStatus.innerText=snap.val(); });
+
+// Dosage Chart
+const ctx = document.getElementById('dosageChart').getContext('2d');
+const dosageChart = new Chart(ctx, {
+  type:'line',
+  data:{ labels:[], datasets:[
+    { label:'Tank 1', data:[], borderColor:'green', backgroundColor:'rgba(16,163,74,0.2)', fill:true, tension:0.3 },
+    { label:'Tank 2', data:[], borderColor:'blue', backgroundColor:'rgba(8,145,178,0.2)', fill:true, tension:0.3 }
+  ]},
+  options:{ responsive:true, scales:{ x:{ title:{ display:true, text:'Time'} }, y:{ beginAtZero:true } } }
+});
+
+function addDosageData(t1,t2){
+  const time=new Date().toLocaleTimeString(), maxPoints=20;
+  dosageChart.data.labels.push(time);
+  dosageChart.data.datasets[0].data.push(t1);
+  dosageChart.data.datasets[1].data.push(t2);
+  if(dosageChart.data.labels.length>maxPoints){
+    dosageChart.data.labels.shift();
+    dosageChart.data.datasets[0].data.shift();
+    dosageChart.data.datasets[1].data.shift();
+  }
+  dosageChart.update();
+}
+
+// Dosage Level Update
+function updateDosageLevels(t1,t2){
+  if(t1!==null) latestTank1=t1;
+  if(t2!==null) latestTank2=t2;
+  doseLevelTank1.innerText = "Tank 1: "+latestTank1.toFixed(1);
+  doseLevelTank2.innerText = "Tank 2: "+latestTank2.toFixed(1);
+
+  const total = latestTank1 + latestTank2;
+  if(total>=50){ doseLevelStatus.innerText="Level: Full"; doseLevelStatus.style.color="green"; }
+  else if(total>=20){ doseLevelStatus.innerText="Level: OK"; doseLevelStatus.style.color="#d97706"; }
+  else{ doseLevelStatus.innerText="Level: Low"; doseLevelStatus.style.color="red"; }
+
+  addDosageData(latestTank1,latestTank2);
+}
+
+db.ref('/dose/tank1').on('value',snap=>{ updateDosageLevels(snap.val(),null); });
+db.ref('/dose/tank2').on('value',snap=>{ updateDosageLevels(null,snap.val()); });
+
+</script>
+</body>
+</html>

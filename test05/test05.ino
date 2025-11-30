@@ -7,8 +7,8 @@
 #include <math.h> // for fabs
 
 // ---------- WIFI ----------
-#define WIFI_SSID "nigeeth"
-#define WIFI_PASSWORD "aaaaaaa1"
+#define WIFI_SSID "nishee"
+#define WIFI_PASSWORD "7654321e"
 
 // ---------- Firebase ----------
 FirebaseData fbdo;
@@ -46,27 +46,15 @@ Servo servoLower2;
 HX711 scale;
 #define LOADCELL_DOUT 26
 #define LOADCELL_SCK 27
-float scale_factor = -23500.0; // keep your existing factor, fine-tune with weight_correction if needed
-
-// Fine-tuning multiplier — set to 1.00 initially, change after calibration
+float scale_factor = -23500.0; 
 float weight_correction = 1.00;
-
-// Filtered weight variable (DECLARED)
 float filteredWeight = 0.0;
-
 const float target_weight_g = 100.0;
-unsigned long sensorInterval = 2000;
-unsigned long fbPollInterval = 600;
-
-bool mainDoorOpen = false;
-bool lowerDoorsOpen = false;
-unsigned long lastSensorMillis = 0;
-unsigned long lastFbPollMillis = 0;
 
 // ---------- DOSAGE SYSTEM (DAILY) ----------
-#define DOSAGE_RELAY 22          // Relay pump control
-int dosage_time_ms = 5000;       // PUMP RUN TIME (5 seconds)
- 
+#define DOSAGE_RELAY 22
+int dosage_time_ms = 5000;
+
 // ---------- WEEKLY DOSAGE SYSTEM ----------
 #define WEEKLY_DOSAGE_RELAY 23
 float weekly_flowRate_mL_per_sec = 10.0;
@@ -74,11 +62,33 @@ bool weeklyDosageRunning = false;
 unsigned long weeklyStartMillis = 0;
 unsigned long weeklyDurationMillis = 0;
 
-// ---------- IR Sensor for main food chamber ----------
-#define IR_FOOD_PIN 36 // Change if needed
+// ---------- IR Sensor ----------
+#define IR_FOOD_PIN 36 
 bool foodAvailable = false;
 
-// -------------------- WiFi Connect --------------------
+// ---------- Ultrasonic Sensor ----------
+#define ULTRA_TRIG 15
+#define ULTRA_ECHO 2
+const float EXPECTED_WATER_DIST_CM = 5.0;
+float waterDistance = 0.0;
+
+// ---------- Dosage Level Sensors ----------
+#define DOSAGE1_PIN 32
+#define DOSAGE2_PIN 33
+int doseLevel1 = 0;
+int doseLevel2 = 0;
+
+// ---------- Timing ----------
+unsigned long sensorInterval = 2000;
+unsigned long fbPollInterval = 600;
+unsigned long lastSensorMillis = 0;
+unsigned long lastFbPollMillis = 0;
+
+// ---------- Door States ----------
+bool mainDoorOpen = false;
+bool lowerDoorsOpen = false;
+
+// -------------------- WiFi --------------------
 void wifiConnect() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting WiFi");
@@ -98,7 +108,7 @@ void setFeedStatus(const char *txt) {
 
 // -------------------- Servo Functions --------------------
 void openMainDoor() {
-  if(foodAvailable){ // Only open if food is detected
+  if(foodAvailable){ 
     servoMain.write(90);
     mainDoorOpen = true;
     setFeedStatus("Main Opened - Food Dispensed");
@@ -116,7 +126,7 @@ void closeMainDoor() {
 void openLowerDoors() { 
   const int angle = 90;
   servoLower1.write(angle); 
-  servoLower2.write(180 - angle);  // Inverted to match physical direction
+  servoLower2.write(180 - angle);  
   lowerDoorsOpen = true; 
   setFeedStatus("Lower Opened"); 
 }
@@ -124,7 +134,7 @@ void openLowerDoors() {
 void closeLowerDoors() { 
   const int angle = 0;
   servoLower1.write(angle); 
-  servoLower2.write(180 - angle);   // Inverted to match physical direction
+  servoLower2.write(180 - angle);   
   lowerDoorsOpen = false; 
   setFeedStatus("Lower Closed"); 
 }
@@ -132,20 +142,11 @@ void closeLowerDoors() {
 // -------------------- Weight Read --------------------
 float read_weight() {
   if (!scale.is_ready()) return 0.0;
-
-  // Take multiple units for better stability
-  float w = scale.get_units(20);   // increased samples for smoothing
-
-  // Noise floor: treat tiny jitter as zero
+  float w = scale.get_units(20);   
   if (fabs(w) < 0.05) w = 0.0;
-
-  // Apply fine-tuning multiplier (calibration)
   w = w * weight_correction;
-
-  // Smooth filter to avoid jumps (simple exponential)
   float alpha = 0.1;
   filteredWeight = (alpha * w) + (1 - alpha) * filteredWeight;
-
   return filteredWeight;
 }
 
@@ -153,9 +154,9 @@ float read_weight() {
 void startDosage() {
   Serial.println("Starting daily dosage...");
   Firebase.RTDB.setString(&fbdo, "/dose/status", "Dispensing...");
-  digitalWrite(DOSAGE_RELAY, LOW);  // Pump ON (active LOW)
+  digitalWrite(DOSAGE_RELAY, LOW);  
   delay(dosage_time_ms);
-  digitalWrite(DOSAGE_RELAY, HIGH);   // Pump OFF
+  digitalWrite(DOSAGE_RELAY, HIGH);  
   Firebase.RTDB.setString(&fbdo, "/dose/status", "Done");
   Serial.println("Daily dosage complete!");
 }
@@ -177,7 +178,6 @@ void handleWeeklyDosage() {
 
     float mlAmount = 0;
     Firebase.RTDB.getFloat(&fbdo, "/weeklyDose/ml", &mlAmount);
-
     if(mlAmount <= 0){
       Firebase.RTDB.setString(&fbdo, "/weeklyDose/status", "Enter valid mL");
       Firebase.RTDB.setBool(&fbdo, "/weeklyDose/start", false);
@@ -187,16 +187,16 @@ void handleWeeklyDosage() {
     weeklyDurationMillis = (unsigned long)((mlAmount / weekly_flowRate_mL_per_sec) * 1000);
     weeklyStartMillis = millis();
 
-    digitalWrite(WEEKLY_DOSAGE_RELAY, LOW); // Pump ON (active LOW)
+    digitalWrite(WEEKLY_DOSAGE_RELAY, LOW); 
     Firebase.RTDB.setString(&fbdo, "/weeklyDose/status", "Dispensing...");
     weeklyDosageRunning = true;
-    Firebase.RTDB.setBool(&fbdo, "/weeklyDose/start", false); // reset trigger
+    Firebase.RTDB.setBool(&fbdo, "/weeklyDose/start", false); 
     Serial.printf("Weekly dosage started: %.2f mL\n", mlAmount);
   }
 
   if(weeklyDosageRunning){
     if(millis() - weeklyStartMillis >= weeklyDurationMillis){
-      digitalWrite(WEEKLY_DOSAGE_RELAY, HIGH); // Pump OFF
+      digitalWrite(WEEKLY_DOSAGE_RELAY, HIGH); 
       weeklyDosageRunning = false;
       Firebase.RTDB.setString(&fbdo, "/weeklyDose/status", "Done. Poured");
       Firebase.RTDB.setBool(&fbdo, "/weeklyDose/hasPoured", true);
@@ -204,17 +204,28 @@ void handleWeeklyDosage() {
   }
 }
 
+// -------------------- Ultrasonic Sensor --------------------
+float readUltrasonic() {
+  digitalWrite(ULTRA_TRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(ULTRA_TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(ULTRA_TRIG, LOW);
+
+  long duration = pulseIn(ULTRA_ECHO, HIGH, 30000); 
+  if(duration == 0) return -1; 
+
+  float distance_cm = (duration / 2.0) * 0.0343;
+  return distance_cm;
+}
+
 // -------------------- Firebase button handler --------------------
 void pollFirebaseButtons() {
   bool b;
-
-  // Feeding control
   if (Firebase.RTDB.getBool(&fbdo, "/feed/button_open_main", &b) && b){ openMainDoor(); Firebase.RTDB.setBool(&fbdo, "/feed/button_open_main", false); }
   if (Firebase.RTDB.getBool(&fbdo, "/feed/button_close_main", &b) && b){ closeMainDoor(); Firebase.RTDB.setBool(&fbdo, "/feed/button_close_main", false); }
   if (Firebase.RTDB.getBool(&fbdo, "/feed/button_open_lower", &b) && b){ openLowerDoors(); Firebase.RTDB.setBool(&fbdo, "/feed/button_open_lower", false); }
   if (Firebase.RTDB.getBool(&fbdo, "/feed/button_close_lower", &b) && b){ closeLowerDoors(); Firebase.RTDB.setBool(&fbdo, "/feed/button_close_lower", false); }
-
-  // Daily Dosage
   if (Firebase.RTDB.getBool(&fbdo, "/dose/start", &b) && b){ startDosage(); Firebase.RTDB.setBool(&fbdo, "/dose/start", false); }
 }
 
@@ -226,14 +237,14 @@ void setup() {
   pinMode(LED_HARM, OUTPUT);
   pinMode(HEATER_RELAY, OUTPUT);
   pinMode(COOLING_RELAY, OUTPUT);
-
-  pinMode(DOSAGE_RELAY, OUTPUT);
-  digitalWrite(DOSAGE_RELAY, HIGH);
-
-  pinMode(WEEKLY_DOSAGE_RELAY, OUTPUT);
-  digitalWrite(WEEKLY_DOSAGE_RELAY, HIGH);
-
-  pinMode(IR_FOOD_PIN, INPUT); // IR sensor input
+  pinMode(DOSAGE_RELAY, OUTPUT); digitalWrite(DOSAGE_RELAY, HIGH);
+  pinMode(WEEKLY_DOSAGE_RELAY, OUTPUT); digitalWrite(WEEKLY_DOSAGE_RELAY, HIGH);
+  pinMode(IR_FOOD_PIN, INPUT);
+  pinMode(ULTRA_TRIG, OUTPUT);
+  pinMode(ULTRA_ECHO, INPUT);
+  
+  pinMode(DOSAGE1_PIN, INPUT);
+  pinMode(DOSAGE2_PIN, INPUT);
 
   sensors.begin();
   servoMain.attach(SERVO_MAIN_PIN);
@@ -244,9 +255,9 @@ void setup() {
 
   scale.begin(LOADCELL_DOUT, LOADCELL_SCK);
   scale.set_scale(scale_factor);
-  delay(500);           // allow HX711 settle after set_scale
-  scale.tare(20);       // more accurate tare using multiple samples
-
+  delay(500);
+  scale.tare(20);
+  
   wifiConnect();
 
   config.api_key = "AIzaSyASBX1WRqOyJea1fm4LXGIV1PHT_7GuCVo";
@@ -260,7 +271,6 @@ void setup() {
   Firebase.RTDB.setString(&fbdo, "/weeklyDose/status", "Time to Pour");
   Firebase.RTDB.setBool(&fbdo, "/weeklyDose/hasPoured", false);
 
-  // Initialize filteredWeight to current reading to avoid jump
   if (scale.is_ready()) {
     float init = scale.get_units(10) * weight_correction;
     filteredWeight = (fabs(init) < 0.05) ? 0.0 : init;
@@ -271,13 +281,9 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // Update IR sensor status
-  foodAvailable = digitalRead(IR_FOOD_PIN) == LOW; // adjust if sensor is active LOW
-  if(foodAvailable){
-    Firebase.RTDB.setString(&fbdo, "/feed/foodStatus", "Food Available");
-  } else {
-    Firebase.RTDB.setString(&fbdo, "/feed/foodStatus", "No Food");
-  }
+  // IR Sensor
+  foodAvailable = digitalRead(IR_FOOD_PIN) == LOW; 
+  Firebase.RTDB.setString(&fbdo, "/feed/foodStatus", foodAvailable?"Food Available":"No Food");
 
   // Temperature
   sensors.requestTemperatures();
@@ -326,6 +332,24 @@ void loop() {
 
   // Weekly dosage
   handleWeeklyDosage();
+
+  // Ultrasonic water level
+  float ultraDistance = readUltrasonic();
+  if(ultraDistance > 0){
+      waterDistance = ultraDistance;
+      Firebase.RTDB.setFloat(&fbdo, "/sensor/waterLevel", waterDistance);
+      if(waterDistance > EXPECTED_WATER_DIST_CM + 0.5){
+          Firebase.RTDB.setString(&fbdo, "/sensor/waterAlert", "Water Low!");
+      } else {
+          Firebase.RTDB.setString(&fbdo, "/sensor/waterAlert", "Water OK");
+      }
+  }
+
+  // Dosage tank levels
+  doseLevel1 = digitalRead(DOSAGE1_PIN) == HIGH ? 100 : 0; // HIGH = Full
+  doseLevel2 = digitalRead(DOSAGE2_PIN) == HIGH ? 100 : 0;
+  Firebase.RTDB.setFloat(&fbdo, "/dose/tank1", doseLevel1);
+  Firebase.RTDB.setFloat(&fbdo, "/dose/tank2", doseLevel2);
 
   delay(10);
 }
